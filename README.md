@@ -1,101 +1,111 @@
 # PacketSniff
 
-PacketSniff is a web-based network traffic analyzer and PCAP explorer built on Django. Designed as a browser-accessible alternative to desktop utilities like Wireshark, it enables real-time packet capture, deep protocol inspection, dynamic bandwidth visualization, and offline PCAP file analysis.
+PacketSniff is a real-time network packet sniffer and streaming dashboard built with Django Channels, Scapy, and Redis. It captures raw network interface traffic at the socket level and streams parsed frame data to a web application over non-blocking WebSockets.
 
-## Key Features
+![PacketSniff Dashboard Preview](assets/image.png)
 
-* **Live Packet Capture:** Stream live network interface traffic directly to the browser using Django Channels and Redis.
-* **Protocol Inspection:** Interactive packet table with protocol classification, header inspection, and raw payload views.
-* **PCAP File Explorer:** Upload `.pcap` and `.pcapng` files for offline analysis and background parsing via Celery.
-* **Real-Time Analytics:** Dashboards visualizing bandwidth consumption, protocol distributions, and top talkers.
-* **Privilege Isolation:** Designed to run packet captures via isolated worker daemons, maintaining security by ensuring the primary Django process does not require root permissions.
-
-
-## Project Structure
+## Architecture Overview
 
 ```text
-PacketSniff/
-├── Makefile                # Shortcuts for server, migrations, and sniffer execution
-├── README.md               # Project documentation
-├── manage.py               # Django management script
-├── analyzer/               # Primary Django application
-│   ├── admin.py            # Model registration for Django Admin
-│   ├── apps.py             # App configuration metadata
-│   ├── migrations/         # Database migration files (0001_initial.py)
-│   ├── models.py           # CaptureSession and PacketRecord schemas
-│   ├── tests.py            # Application unit tests
-│   ├── urls.py             # App-level routing rules
-│   └── views.py            # Request handlers and business logic
-└── packetsniff/            # Project configuration package
-    ├── asgi.py             # ASGI entry point for WebSockets/Django Channels
-    ├── settings.py         # Global Django configuration settings
-    ├── urls.py             # Root URL routing
-    └── wsgi.py             # WSGI entry point for standard HTTP deployment
+[ Network Interface ]
+        │
+        ▼ (Raw Sockets)
+ [ Scapy Sniffer ] ───(async_to_sync)───► [ Redis / Valkey Channel Layer ]
+                                                    │
+                                                    ▼
+[ Web Dashboard ] ◄──────(WebSocket)──── [ Daphne ASGI Server ]
+
+```
+
+1. **Packet Capture Daemon (`sniffer.py`)**: Runs with administrative privileges to inspect network frames via Scapy, extracting layer data (IP, TCP, UDP, ICMP) and broadcasting JSON payloads.
+2. **Channel Layer Broker (Redis)**: Serves as an asynchronous message bus passing packet event dictionaries between the capture daemon and ASGI worker processes.
+3. **ASGI Server (Daphne)**: Handles WebSocket lifecycle events (`ws://127.0.0.1:8000/ws/packets/`) and multiplexes packet broadcasts to connected browser sessions.
+4. **Frontend Dashboard**: Minimalist single-page interface monitoring packet velocities, protocol distributions via dynamic bar charts, and live stream control filters.
+
+---
+
+## Tech Stack
+
+* **Language**: Python 3.14
+* **Backend Framework**: Django 5.x + Django Channels (ASGI)
+* **ASGI Server**: Daphne
+* **Packet Engine**: Scapy
+* **Message Broker**: Redis / Valkey (RESP2 Protocol)
+* **Frontend Engine**: HTML5, Tailwind CSS, Chart.js, Vanilla JavaScript (WebSockets)
+
+---
+
+## Prerequisites
+
+* Python 3.14 or higher
+* Redis or Valkey server running locally on default port `6379`
+* Root / Sudo execution privileges (required by Scapy for raw socket binding)
+
+---
+
+## Installation & Setup
+
+1. Clone the repository:
+```bash
+git clone [https://github.com/blankInPajamas/PacketSniff.git](https://github.com/blankInPajamas/PacketSniff.git)
+cd PacketSniff
 
 ```
 
 
-## Project Setup & Usage
-
-### 1. Prerequisites
-
-Ensure Python 3, Redis, and `libpcap` dependencies are installed on your system.
-
-### 2. Virtual Environment & Dependencies
-
+2. Create and activate a Python virtual environment:
 ```bash
-# Create and activate virtual environment
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate
 
-# Upgrade package manager
-pip install --upgrade pip
-
-# Install project dependencies
-pip install django redis scapy channels daphne
-
 ```
 
-### 3. Database Management
 
-Apply the database migrations to set up the SQLite schema for `CaptureSession` and `PacketRecord`:
-
+3. Install requirements:
 ```bash
-make migrate
+pip install -r requirements.txt
 
 ```
 
-### 4. Running the Development Server
 
+4. Apply initial database migrations:
+```bash
+python manage.py migrate
+
+```
+
+
+## Execution
+
+1. **Verify Redis is active**:
+```bash
+redis-cli ping
+
+```
+
+
+2. **Start the Daphne ASGI server**:
 ```bash
 make run
 
 ```
 
 
-## Roadmap & Implementation Status
+3. **Start the packet capture daemon** (in a separate terminal):
+```bash
+make sniff
 
-* [x] **Phase 1: Foundation & Data Architecture**
-    * Django project and `analyzer` app setup.
-    * Defined database schemas (`CaptureSession`, `PacketRecord`).
-    * Generated and executed initial database migrations.
-    * Configured project Makefile for task automation.
+```
 
 
-* [x] **Phase 2: Isolated Packet Ingestion Engine**
-    * Develop a standalone `scapy` sniffer daemon with root privileges.
-    * Implement Redis publishing pipeline for real-time packet serialization.
+4. Access the web interface at `http://127.0.0.1:8000/`.
 
 
-* [ ] **Phase 3: Asynchronous WebSockets Pipeline**
-    * Configure Django Channels and Redis Channel Layer.
-    * Implement WebSocket consumers to stream packet data to connected clients.
+## Implementation Progress
 
-
-* [ ] **Phase 4: Web UI & Visualizations**
-    * Build live packet inspection table with protocol color-coding.
-    * Implement raw Hex/ASCII payload viewer and Chart.js dashboards.
-
-
-* [ ] **Phase 5: Offline PCAP Upload Engine**
-    * Implement asynchronous PCAP parsing tasks using Celery and PyShark.
+* [x] **Phase 1**: Base Django configuration and environment setup.
+* [x] **Phase 2**: ASGI routing setup with Django Channels and Redis backend integration.
+* [x] **Phase 3**: Integration of Scapy packet parsing loop with async Redis channel layer broadcasting.
+* [x] **Phase 4**: Frontend dashboard implementation featuring dynamic protocol statistics, Chart.js breakdown graphs, and stream filters.
+* [ ] **Phase 5**: Database persistence using Django ORM, interactive packet inspection modal with hex view, and BPF core sniffer filtering.
+* [ ] **Phase 6**: Cross-platform containerization (`docker-compose` orchestration).
