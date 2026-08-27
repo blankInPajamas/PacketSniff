@@ -1,35 +1,20 @@
+import json
 import redis
-from scapy.all import IP
+from scapy.all import IP, TCP, UDP, ICMP, sniff
 
 # Connecting to Redis/Valkey
 r = redis.Redis(
     host="localhost",
-    port=6000,
+    port=6379,
     db=0
 )
 
-# capture_session = models.ForeignKey(CaptureSession, on_delete=models.CASCADE, related_name='packets')
-#     timestamp = models.DateTimeField()
-
-#     sourceIP = models.GenericIPAddressField()
-#     destIP = models.GenericIPAddressField()
-
-#     sourcePort = models.IntegerField(null=True, blank=True)
-#     destPort = models.IntegerField(null=True, blank=True)
-
-#     protocol_type = models.CharField(max_length=20) # TCP, UDP, ICMP, DNS
-#     packet_length = models.IntegerField()
-
-#     summary = models.TextField()
-
-#     payload = models.TextField(blank=True, null=True)
-
 class Packet:
-    def __init__(self, srcIP, destIP, srcPort, destPort, type, length, summary, payload):
+    def __init__(self, srcIP, destIP, srcPort, dstPort, type, length, summary, payload):
         self.srcIP = srcIP
         self.destIP = destIP
         self.srcPort = srcPort
-        self.destPort = destPort
+        self.dstPort = dstPort
         self.type = type
         self.length = length
         self.summary = summary
@@ -49,4 +34,39 @@ def packet_parsing(packet):
     srcPort = None
     dstPort = None
 
-    pass
+    if TCP in packet:
+        protocol = "TCP"
+        srcPort = packet[TCP].sport
+        dstPort = packet[TCP].dport
+
+    elif UDP in packet:
+        protocol = 'UDP'
+        srcPort = packet[UDP].sport
+        dstPort = packet[UDP].dport
+
+    elif ICMP in packet:
+        protocol = 'ICMP'
+
+    payload = ''
+    if packet.haslayer('Raw'):
+        payload = packet['Raw'].load.hex()
+
+    packet_data = Packet(
+        srcIP= srcIP,
+        destIP= destIP,
+        srcPort= srcPort,
+        dstPort= dstPort,
+        type=  protocol,
+        length= length,
+        summary= summary,
+        payload= payload
+    )
+
+    r.publish('packet_stream', json.dumps(packet_data.__dict__))
+    print(f"[{protocol}] {srcIP}:{srcPort} -> {destIP}:{dstPort}")
+
+if __name__ == '__main__':
+    INTERFACE = 'wlp0s20f3'
+    print(f'Starting PacketSniff daemon on interface: {INTERFACE}...')
+
+    sniff(iface=INTERFACE, prn=packet_parsing, store=0)
