@@ -3,7 +3,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 
 class PacketConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        self.group_name = 'packet_stream'
+        self.group_name = 'packets'
 
         await self.channel_layer.group_add(
             self.group_name,
@@ -20,10 +20,10 @@ class PacketConsumer(AsyncWebsocketConsumer):
         )
 
     async def packet_message(self, event):
-        data = event["data"]
+        data = event.get("data", event.get("packet"))
 
         await self.send(text_data=json.dumps(
             {
-                "packet": packet_data
+                "packet": data
             }
         ))

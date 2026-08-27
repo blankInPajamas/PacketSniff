@@ -1,25 +1,14 @@
-import json
-import redis
+import os
+import django
 from scapy.all import IP, TCP, UDP, ICMP, sniff
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 
-# Connecting to Redis/Valkey
-r = redis.Redis(
-    host="localhost",
-    port=6379,
-    db=0
-)
+# Setup Django environment so Scapy script can access Channels Layer
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'packetsniff.settings')
+django.setup()
 
-class Packet:
-    def __init__(self, srcIP, destIP, srcPort, dstPort, type, length, summary, payload):
-        self.srcIP = srcIP
-        self.destIP = destIP
-        self.srcPort = srcPort
-        self.dstPort = dstPort
-        self.type = type
-        self.length = length
-        self.summary = summary
-        self.payload = payload
-
+channel_layer = get_channel_layer()
 
 def packet_parsing(packet):
     if IP not in packet:
@@ -38,12 +27,10 @@ def packet_parsing(packet):
         protocol = "TCP"
         srcPort = packet[TCP].sport
         dstPort = packet[TCP].dport
-
     elif UDP in packet:
         protocol = 'UDP'
         srcPort = packet[UDP].sport
         dstPort = packet[UDP].dport
-
     elif ICMP in packet:
         protocol = 'ICMP'
 
@@ -51,22 +38,33 @@ def packet_parsing(packet):
     if packet.haslayer('Raw'):
         payload = packet['Raw'].load.hex()
 
-    packet_data = Packet(
-        srcIP= srcIP,
-        destIP= destIP,
-        srcPort= srcPort,
-        dstPort= dstPort,
-        type=  protocol,
-        length= length,
-        summary= summary,
-        payload= payload
+    # Use a raw dict directly (avoiding custom class collision with Scapy.Packet)
+    packet_data = {
+        "srcIP": srcIP,
+        "destIP": destIP,
+        "srcPort": srcPort,
+        "dstPort": dstPort,
+        "type": protocol,
+        "length": length,
+        "summary": summary,
+        "payload": payload
+    }
+
+    # Broadcast directly to Django Channels
+    async_to_sync(channel_layer.group_send)(
+        "packets",
+        {
+            "type": "packet.message",
+            "data": packet_data,
+        }
     )
 
-    r.publish('packet_stream', json.dumps(packet_data.__dict__))
     print(f"[{protocol}] {srcIP}:{srcPort} -> {destIP}:{dstPort}")
+    
+    # Return None explicitly so Scapy does not attempt serialization
+    return None
 
 if __name__ == '__main__':
     INTERFACE = 'wlp0s20f3'
     print(f'Starting PacketSniff daemon on interface: {INTERFACE}...')
-
     sniff(iface=INTERFACE, prn=packet_parsing, store=0)
