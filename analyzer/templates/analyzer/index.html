@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>packetsniff</title>
+    
+    <!-- Monkeytype Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS & Chart.js -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #323437;
+            color: #d1d0c5;
+        }
+        .mt-accent { color: #e2b714; }
+        .bg-mt-accent { background-color: #e2b714; }
+        .border-mt-accent { border-color: #e2b714; }
+        .mt-sub { color: #646669; }
+        .bg-mt-sub { background-color: #2c2e31; }
+        .bg-mt-bg { background-color: #323437; }
+        .mt-text { color: #d1d0c5; }
+        
+        /* Custom Scrollbar for Monkeytype aesthetic */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2c2e31;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #646669;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #e2b714;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-6 md:p-12 selection:bg-[#e2b714] selection:text-[#323437]">
+    <div class="max-w-7xl mx-auto space-y-8">
+
+        <!-- Top Navigation / Header -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#444649] pb-6">
+            <div class="flex items-center gap-3">
+                <span class="text-3xl font-bold mt-accent tracking-tighter">packet<span class="mt-text">sniff</span></span>
+                <span id="connectionStatus" class="text-xs px-2 py-0.5 rounded bg-mt-sub mt-sub border border-[#444649] flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-[#646669] inline-block"></span> disconnected
+                </span>
+            </div>
+
+            <!-- Controls (Filter & Pause) -->
+            <div class="flex items-center gap-4 text-sm font-medium">
+                <div class="flex items-center gap-2 bg-mt-sub px-3 py-1.5 rounded border border-[#444649]">
+                    <span class="mt-sub text-xs">filter:</span>
+                    <select id="protocolFilter" class="bg-transparent text-xs mt-accent focus:outline-none cursor-pointer">
+                        <option value="ALL" class="bg-[#2c2e31] text-mt-text">ALL</option>
+                        <option value="TCP" class="bg-[#2c2e31] text-mt-text">TCP</option>
+                        <option value="UDP" class="bg-[#2c2e31] text-mt-text">UDP</option>
+                        <option value="ICMP" class="bg-[#2c2e31] text-mt-text">ICMP</option>
+                        <option value="OTHER" class="bg-[#2c2e31] text-mt-text">OTHER</option>
+                    </select>
+                </div>
+
+                <button id="toggleStreamBtn" class="bg-mt-sub hover:bg-[#3c3e41] text-xs px-4 py-1.5 rounded border border-[#444649] mt-accent transition-colors">
+                    pause stream
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats Overview Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="bg-mt-sub p-4 rounded border border-[#444649] space-y-1">
+                <span class="text-xs mt-sub uppercase">Total Packets</span>
+                <p id="statTotal" class="text-2xl font-bold mt-accent">0</p>
+            </div>
+            <div class="bg-mt-sub p-4 rounded border border-[#444649] space-y-1">
+                <span class="text-xs mt-sub uppercase">TCP</span>
+                <p id="statTcp" class="text-2xl font-bold text-mt-text">0</p>
+            </div>
+            <div class="bg-mt-sub p-4 rounded border border-[#444649] space-y-1">
+                <span class="text-xs mt-sub uppercase">UDP</span>
+                <p id="statUdp" class="text-2xl font-bold text-mt-text">0</p>
+            </div>
+            <div class="bg-mt-sub p-4 rounded border border-[#444649] space-y-1">
+                <span class="text-xs mt-sub uppercase">ICMP</span>
+                <p id="statIcmp" class="text-2xl font-bold text-mt-text">0</p>
+            </div>
+            <div class="bg-mt-sub p-4 rounded border border-[#444649] space-y-1">
+                <span class="text-xs mt-sub uppercase">Other</span>
+                <p id="statOther" class="text-2xl font-bold text-mt-text">0</p>
+            </div>
+        </div>
+
+        <!-- Visual Chart -->
+        <div class="bg-mt-sub p-6 rounded border border-[#444649] space-y-4">
+            <span class="text-xs mt-sub uppercase tracking-wider">Protocol Breakdown</span>
+            <div class="h-48">
+                <canvas id="protocolChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Live Packet Stream Table -->
+        <div class="bg-mt-sub rounded border border-[#444649] overflow-hidden">
+            <div class="px-6 py-4 border-b border-[#444649] flex justify-between items-center">
+                <span class="text-xs mt-sub uppercase tracking-wider">Live Packet Stream</span>
+                <span class="text-xs mt-sub">showing last 50 entries</span>
+            </div>
+            <div class="overflow-x-auto max-h-[450px]">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-[#232527] mt-sub uppercase sticky top-0 border-b border-[#444649]">
+                        <tr>
+                            <th class="py-3 px-4">Protocol</th>
+                            <th class="py-3 px-4">Source</th>
+                            <th class="py-3 px-4">Destination</th>
+                            <th class="py-3 px-4">Length</th>
+                            <th class="py-3 px-4">Summary</th>
+                        </tr>
+                    </thead>
+                    <tbody id="packetTable" class="divide-y divide-[#3a3c3f] font-mono">
+                        <!-- Dynamic Packet Rows -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Dashboard state
+        let isPaused = false;
+        let selectedFilter = 'ALL';
+        let packetCount = 0;
+        const counts = { TCP: 0, UDP: 0, ICMP: 0, OTHER: 0 };
+
+        // DOM References
+        const statusEl = document.getElementById('connectionStatus');
+        const tableEl = document.getElementById('packetTable');
+        const toggleBtn = document.getElementById('toggleStreamBtn');
+        const filterSelect = document.getElementById('protocolFilter');
+
+        const statTotal = document.getElementById('statTotal');
+        const statTcp = document.getElementById('statTcp');
+        const statUdp = document.getElementById('statUdp');
+        const statIcmp = document.getElementById('statIcmp');
+        const statOther = document.getElementById('statOther');
+
+        // Chart.js Setup (Monkeytype Theme)
+        Chart.defaults.color = '#646669';
+        Chart.defaults.font.family = "'Roboto Mono', monospace";
+        
+        const ctx = document.getElementById('protocolChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['TCP', 'UDP', 'ICMP', 'OTHER'],
+                datasets: [{
+                    data: [0, 0, 0, 0],
+                    backgroundColor: ['#e2b714', '#d1d0c5', '#646669', '#444649'],
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { grid: { color: '#3a3c3f' }, beginAtZero: true }
+                }
+            }
+        });
+
+        // WebSocket Setup
+        const socket = new WebSocket(`ws://${window.location.host}/ws/packets/`);
+
+        socket.onopen = () => {
+            statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-[#e2b714] inline-block"></span> live`;
+            statusEl.className = 'text-xs px-2 py-0.5 rounded bg-mt-sub mt-accent border border-mt-accent flex items-center gap-1.5';
+        };
+
+        socket.onmessage = (e) => {
+            if (isPaused) return;
+
+            const { packet } = JSON.parse(e.data);
+            
+            // Statistics update
+            packetCount++;
+            counts[packet.type] = (counts[packet.type] || 0) + 1;
+
+            statTotal.textContent = packetCount;
+            statTcp.textContent = counts.TCP;
+            statUdp.textContent = counts.UDP;
+            statIcmp.textContent = counts.ICMP;
+            statOther.textContent = counts.OTHER;
+
+            // Update Chart
+            chart.data.datasets[0].data = [counts.TCP, counts.UDP, counts.ICMP, counts.OTHER];
+            chart.update('none'); // Silent update for continuous rendering
+
+            // Apply active filter
+            if (selectedFilter !== 'ALL' && packet.type !== selectedFilter) return;
+
+            // Append Row
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-[#37393c] transition-colors';
+
+            const protoColor = packet.type === 'TCP' ? 'mt-accent font-bold' : 'mt-text';
+            const srcPortStr = packet.srcPort ? `:${packet.srcPort}` : '';
+            const dstPortStr = packet.dstPort ? `:${packet.dstPort}` : '';
+
+            row.innerHTML = `
+                <td class="py-2.5 px-4 ${protoColor}">${packet.type}</td>
+                <td class="py-2.5 px-4 text-mt-text">${packet.srcIP}<span class="mt-sub">${srcPortStr}</span></td>
+                <td class="py-2.5 px-4 text-mt-text">${packet.destIP}<span class="mt-sub">${dstPortStr}</span></td>
+                <td class="py-2.5 px-4 mt-sub">${packet.length} B</td>
+                <td class="py-2.5 px-4 mt-sub truncate max-w-xs">${packet.summary}</td>
+            `;
+
+            tableEl.prepend(row);
+            if (tableEl.children.length > 50) tableEl.lastChild.remove();
+        };
+
+        socket.onclose = () => {
+            statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span> disconnected`;
+            statusEl.className = 'text-xs px-2 py-0.5 rounded bg-mt-sub text-red-400 border border-red-900 flex items-center gap-1.5';
+        };
+
+        // Event Listeners
+        toggleBtn.addEventListener('click', () => {
+            isPaused = !isPaused;
+            toggleBtn.textContent = isPaused ? 'resume stream' : 'pause stream';
+            toggleBtn.className = isPaused 
+                ? 'bg-mt-accent text-[#323437] text-xs px-4 py-1.5 rounded font-bold transition-colors'
+                : 'bg-mt-sub hover:bg-[#3c3e41] text-xs px-4 py-1.5 rounded border border-[#444649] mt-accent transition-colors';
+        });
+
+        filterSelect.addEventListener('change', (e) => {
+            selectedFilter = e.target.value;
+        });
+    </script>
+</body>
+</html>
