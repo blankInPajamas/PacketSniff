@@ -52,7 +52,7 @@ source venv/bin/activate
 pip install --upgrade pip
 
 # Install project dependencies
-pip install django redis scapy
+pip install django redis scapy channels daphne
 
 ```
 
