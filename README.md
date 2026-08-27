@@ -10,7 +10,6 @@ PacketSniff is a web-based network traffic analyzer and PCAP explorer built on D
 * **Real-Time Analytics:** Dashboards visualizing bandwidth consumption, protocol distributions, and top talkers.
 * **Privilege Isolation:** Designed to run packet captures via isolated worker daemons, maintaining security by ensuring the primary Django process does not require root permissions.
 
----
 
 ## Project Structure
 
@@ -35,7 +34,6 @@ PacketSniff/
 
 ```
 
----
 
 ## Project Setup & Usage
 
@@ -74,31 +72,30 @@ make run
 
 ```
 
----
 
 ## Roadmap & Implementation Status
 
 * [x] **Phase 1: Foundation & Data Architecture**
-* Django project and `analyzer` app setup.
-* Defined database schemas (`CaptureSession`, `PacketRecord`).
-* Generated and executed initial database migrations.
-* Configured project Makefile for task automation.
+    * Django project and `analyzer` app setup.
+    * Defined database schemas (`CaptureSession`, `PacketRecord`).
+    * Generated and executed initial database migrations.
+    * Configured project Makefile for task automation.
 
 
 * [ ] **Phase 2: Isolated Packet Ingestion Engine**
-* Develop a standalone `scapy` sniffer daemon with root privileges.
-* Implement Redis publishing pipeline for real-time packet serialization.
+    * Develop a standalone `scapy` sniffer daemon with root privileges.
+    * Implement Redis publishing pipeline for real-time packet serialization.
 
 
 * [ ] **Phase 3: Asynchronous WebSockets Pipeline**
-* Configure Django Channels and Redis Channel Layer.
-* Implement WebSocket consumers to stream packet data to connected clients.
+    * Configure Django Channels and Redis Channel Layer.
+    * Implement WebSocket consumers to stream packet data to connected clients.
 
 
 * [ ] **Phase 4: Web UI & Visualizations**
-* Build live packet inspection table with protocol color-coding.
-* Implement raw Hex/ASCII payload viewer and Chart.js dashboards.
+    * Build live packet inspection table with protocol color-coding.
+    * Implement raw Hex/ASCII payload viewer and Chart.js dashboards.
 
 
 * [ ] **Phase 5: Offline PCAP Upload Engine**
-* Implement asynchronous PCAP parsing tasks using Celery and PyShark.
+    * Implement asynchronous PCAP parsing tasks using Celery and PyShark.
