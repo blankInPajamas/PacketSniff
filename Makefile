@@ -1,4 +1,4 @@
-.PHONY: run migrate migrations
+.PHONY: run migrate migrations sniff
 
 run:
 	./venv/bin/python manage.py runserver
@@ -8,4 +8,7 @@ migrations:
 
 migrate:
 	./venv/bin/python manage.py migrate
+
+sniff:
+	sudo ./venv/bin/python sniffer.py
 	
