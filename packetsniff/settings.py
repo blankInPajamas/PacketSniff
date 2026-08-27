@@ -31,10 +31,12 @@ ALLOWED_HOSTS = []
 # Application definition
 
 EXTERNAL_APPS = [
-    'analyzer'
+    'channels',
+    'analyzer',
 ]
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
