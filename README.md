@@ -72,21 +72,32 @@ redis-cli ping
 ```
 
 
-2. **Start the Daphne ASGI server**:
+2. **Start the Daphne ASGI server and Sniffer Daemon concurrently**:
+```bash
+make dev
+
+```
+
+Or start them manually in separate terminals:
+
+
+- **Terminal 1 (ASGI Server)**
 ```bash
 make run
 
 ```
-
-
-3. **Start the packet capture daemon** (in a separate terminal):
+- **Terminal 2 (Packet Sniffer)**
 ```bash
 make sniff
-
 ```
 
+- **Optional**: Pass an initial BPF expression directly:
 
-4. Access the web interface at `http://127.0.0.1:8000/`.
+```bash
+sudo ./venv/bin/python sniffer.py "tcp port 80 or icmp"
+```
+
+3. Access the web interface at `http://127.0.0.1:8000/`.
 
 
 ## Implementation Progress
@@ -95,5 +106,5 @@ make sniff
 * [x] **Phase 2**: ASGI routing setup with Django Channels and Redis backend integration.
 * [x] **Phase 3**: Integration of Scapy packet parsing loop with async Redis channel layer broadcasting.
 * [x] **Phase 4**: Frontend dashboard implementation featuring dynamic protocol statistics, Chart.js breakdown graphs, and stream filters.
-* [ ] **Phase 5**: Database persistence using Django ORM, interactive packet inspection modal with hex view, and BPF core sniffer filtering.
-* [ ] **Phase 6**: Cross-platform containerization (`docker-compose` orchestration).
+* [x] **Phase 5**: Database persistence using Django ORM, interactive packet inspection modal with hex view, and dynamic kernel-level BPF filter updates over WebSocket control channel.
+* [ ] **Phase 6**:** Unit testing suite and cross-platform containerization (`docker-compose` orchestration with NET_ADMIN capabilities).
