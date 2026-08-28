@@ -6,20 +6,7 @@ PacketSniff is a real-time network packet sniffer and streaming dashboard built 
 
 ## Architecture Overview
 
-```text
-[ Network Interface ]
-        │
-        │
-        │ (Raw Sockets)
-        │
-        ▼ 
- [ Scapy Sniffer ] ───(async_to_sync)───► [ Redis / Valkey Channel Layer ]
-                                                    │
-                                                    │
-                                                    ▼
-[ Web Dashboard ] ◄──────(WebSocket)──── [ Daphne ASGI Server ]
-
-```
+![PacketSniff Architecture Design](assets/architecture-design.png)
 
 1. **Packet Capture Daemon (`sniffer.py`)**: Runs with administrative privileges to inspect network frames via Scapy, extracting layer data (IP, TCP, UDP, ICMP) and broadcasting JSON payloads.
 2. **Channel Layer Broker (Redis)**: Serves as an asynchronous message bus passing packet event dictionaries between the capture daemon and ASGI worker processes.
