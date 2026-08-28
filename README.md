@@ -35,7 +35,7 @@ PacketSniff is a real-time network packet sniffer and streaming dashboard built 
 
 1. Clone the repository:
 ```bash
-git clone [https://github.com/blankInPajamas/PacketSniff.git](https://github.com/blankInPajamas/PacketSniff.git)
+git clone https://github.com/blankInPajamas/PacketSniff.git
 cd PacketSniff
 
 ```
