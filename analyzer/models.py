@@ -30,3 +30,19 @@ class PacketRecord(models.Model):
 
     def __str__(self):
         return f"[{self.protocol_type}] {self.source_ip}:{self.source_port} -> {self.dest_ip}:{self.dest_port}"
+
+class CapturedPacket(models.Model):
+    timestamp = models.DateTimeField(auto_now_add=True)
+    src_ip = models.GenericIPAddressField()
+    dest_ip = models.GenericIPAddressField()
+    src_port = models.IntegerField(null=True, blank=True)
+    dest_port = models.IntegerField(null=True, blank=True)
+    protocol_type = models.CharField(max_length=15)
+    length = models.IntegerField()
+    payload = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"[{self.protocol_type}] {self.src_ip} -> {self.dest_ip}"
