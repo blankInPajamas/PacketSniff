@@ -107,4 +107,4 @@ sudo ./venv/bin/python sniffer.py "tcp port 80 or icmp"
 * [x] **Phase 3**: Integration of Scapy packet parsing loop with async Redis channel layer broadcasting.
 * [x] **Phase 4**: Frontend dashboard implementation featuring dynamic protocol statistics, Chart.js breakdown graphs, and stream filters.
 * [x] **Phase 5**: Database persistence using Django ORM, interactive packet inspection modal with hex view, and dynamic kernel-level BPF filter updates over WebSocket control channel.
-* [ ] **Phase 6**:** Unit testing suite and cross-platform containerization (`docker-compose` orchestration with NET_ADMIN capabilities).
+* [ ] **Phase 6**: Unit testing suite and cross-platform containerization (`docker-compose` orchestration with NET_ADMIN capabilities).
