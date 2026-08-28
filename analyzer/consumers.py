@@ -30,7 +30,7 @@ class PacketConsumer(AsyncWebsocketConsumer):
 
         await self.send(text_data=json.dumps(
             {
-                "packet": data
+                "data": data
             }
         ))
 
@@ -40,8 +40,8 @@ class PacketConsumer(AsyncWebsocketConsumer):
     def save_packet_to_db(self, data):
         try:
             obj = CapturedPacket.objects.create(
-                src_ip = data.get('src_ip', '0.0.0.0'),
-                dest_ip=data.get('dest_ip', '0.0.0.0'),
+                src_ip = data.get('srcIP', '0.0.0.0'),
+                dest_ip=data.get('destIP', '0.0.0.0'),
                 src_port=data.get('srcPort'),
                 dest_port=data.get('dstPort'),
                 protocol_type=data.get('type', 'OTHER'),

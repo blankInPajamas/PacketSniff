@@ -132,6 +132,51 @@
             </div>
         </div>
 
+        <!-- Packet Inspection Modal -->
+        <div id="packet-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div class="bg-[#1e1e2e] border border-gray-700 rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden font-mono text-xs">
+                
+                <!-- Modal Header -->
+                <div class="flex items-center justify-between px-4 py-3 bg-[#181825] border-b border-gray-800">
+                    <div class="flex items-center gap-2">
+                        <span id="modal-protocol-badge" class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-500/20 text-blue-400 border border-blue-500/30">TCP</span>
+                        <h3 id="modal-title" class="text-sm font-bold text-gray-200">Packet Details</h3>
+                    </div>
+                    <button onclick="closePacketModal()" class="text-gray-400 hover:text-white text-lg font-bold px-2 py-0.5 rounded hover:bg-gray-800 transition">✕</button>
+                </div>
+
+                <!-- Modal Content Body -->
+                <div class="p-4 overflow-y-auto space-y-4">
+                    
+                    <!-- Summary Metadata Grid -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-gray-300">
+                        <div class="bg-[#11111b] p-2.5 rounded border border-gray-800">
+                            <span class="text-gray-500 block text-[10px]">SOURCE IP</span>
+                            <span id="modal-src-ip" class="font-semibold text-emerald-400">0.0.0.0</span>
+                        </div>
+                        <div class="bg-[#11111b] p-2.5 rounded border border-gray-800">
+                            <span class="text-gray-500 block text-[10px]">DESTINATION IP</span>
+                            <span id="modal-dest-ip" class="font-semibold text-rose-400">0.0.0.0</span>
+                        </div>
+                        <div class="bg-[#11111b] p-2.5 rounded border border-gray-800">
+                            <span class="text-gray-500 block text-[10px]">PORTS</span>
+                            <span id="modal-ports" class="font-semibold text-gray-200">N/A</span>
+                        </div>
+                        <div class="bg-[#11111b] p-2.5 rounded border border-gray-800">
+                            <span class="text-gray-500 block text-[10px]">FRAME LENGTH</span>
+                            <span id="modal-length" class="font-semibold text-yellow-400">0 bytes</span>
+                        </div>
+                    </div>
+
+                    <!-- Hex & ASCII Dump Viewer -->
+                    <div>
+                        <h4 class="text-gray-400 font-bold mb-1 uppercase tracking-wider text-[10px]">Raw Payload Hex Dump</h4>
+                        <pre id="modal-hex-view" class="bg-[#11111b] p-3 rounded border border-gray-800 text-emerald-400 overflow-x-auto leading-relaxed select-all">No payload data</pre>
+                    </div>
+
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -190,39 +235,70 @@
         socket.onmessage = (e) => {
             if (isPaused) return;
 
-            const { packet } = JSON.parse(e.data);
-            
+            const raw = JSON.parse(e.data);
+            const packet = raw.data ? raw.data : raw;
+
+            // Support both snake_case and camelCase keys dynamically
+            const proto = packet.type || packet.protocol || 'OTHER';
+            const src = packet.srcIP || packet.src_ip || packet.src || 'N/A';
+            const dest = packet.destIP || packet.dstIP || packet.dst_ip || packet.dst || 'N/A';
+            const len = packet.length !== undefined ? packet.length : (packet.len || 0);
+            const summary = packet.summary || 'No Summary';
+
+            const srcPort = packet.srcPort ?? packet.src_port ?? null;
+            const dstPort = packet.dstPort ?? packet.dst_port ?? null;
+
             // Statistics update
             packetCount++;
-            counts[packet.type] = (counts[packet.type] || 0) + 1;
+            if (counts[proto] !== undefined) {
+                counts[proto]++;
+            } else {
+                counts.OTHER++;
+            }
 
             statTotal.textContent = packetCount;
-            statTcp.textContent = counts.TCP;
-            statUdp.textContent = counts.UDP;
-            statIcmp.textContent = counts.ICMP;
-            statOther.textContent = counts.OTHER;
+            statTcp.textContent = counts.TCP || 0;
+            statUdp.textContent = counts.UDP || 0;
+            statIcmp.textContent = counts.ICMP || 0;
+            statOther.textContent = counts.OTHER || 0;
 
             // Update Chart
-            chart.data.datasets[0].data = [counts.TCP, counts.UDP, counts.ICMP, counts.OTHER];
-            chart.update('none'); // Silent update for continuous rendering
+            if (chart && chart.data && chart.data.datasets[0]) {
+                chart.data.datasets[0].data = [counts.TCP, counts.UDP, counts.ICMP, counts.OTHER];
+                chart.update('none');
+            }
 
-            // Apply active filter
-            if (selectedFilter !== 'ALL' && packet.type !== selectedFilter) return;
+            // Apply active protocol filter
+            if (selectedFilter !== 'ALL' && proto !== selectedFilter) return;
 
-            // Append Row
+            // Construct Row
             const row = document.createElement('tr');
-            row.className = 'hover:bg-[#37393c] transition-colors';
+            row.className = 'hover:bg-[#37393c] transition-colors cursor-pointer';
 
-            const protoColor = packet.type === 'TCP' ? 'mt-accent font-bold' : 'mt-text';
-            const srcPortStr = packet.srcPort ? `:${packet.srcPort}` : '';
-            const dstPortStr = packet.dstPort ? `:${packet.dstPort}` : '';
+            // Store mapped object for inspection modal
+            const normalizedPacket = {
+                type: proto,
+                srcIP: src,
+                destIP: dest,
+                srcPort: srcPort,
+                dstPort: dstPort,
+                length: len,
+                summary: summary,
+                payload: packet.payload || ''
+            };
+
+            row.onclick = () => inspectPacket(normalizedPacket);
+
+            const protoColor = proto === 'TCP' ? 'mt-accent font-bold' : 'mt-text';
+            const srcPortStr = srcPort !== null ? `:${srcPort}` : '';
+            const dstPortStr = dstPort !== null ? `:${dstPort}` : '';
 
             row.innerHTML = `
-                <td class="py-2.5 px-4 ${protoColor}">${packet.type}</td>
-                <td class="py-2.5 px-4 text-mt-text">${packet.srcIP}<span class="mt-sub">${srcPortStr}</span></td>
-                <td class="py-2.5 px-4 text-mt-text">${packet.destIP}<span class="mt-sub">${dstPortStr}</span></td>
-                <td class="py-2.5 px-4 mt-sub">${packet.length} B</td>
-                <td class="py-2.5 px-4 mt-sub truncate max-w-xs">${packet.summary}</td>
+                <td class="py-2.5 px-4 ${protoColor}">${proto}</td>
+                <td class="py-2.5 px-4 text-mt-text">${src}<span class="mt-sub">${srcPortStr}</span></td>
+                <td class="py-2.5 px-4 text-mt-text">${dest}<span class="mt-sub">${dstPortStr}</span></td>
+                <td class="py-2.5 px-4 mt-sub">${len} B</td>
+                <td class="py-2.5 px-4 mt-sub truncate max-w-xs">${summary}</td>
             `;
 
             tableEl.prepend(row);
@@ -245,6 +321,66 @@
 
         filterSelect.addEventListener('change', (e) => {
             selectedFilter = e.target.value;
+        });
+
+        // Converts raw hex string into standard hex dump format (Offset | 16 Hex Bytes | ASCII)
+        function formatHexDump(hexString) {
+            if (!hexString || hexString === '') return 'No payload data';
+
+            let output = '';
+            const bytes = [];
+
+            // Parse raw hex string into byte array
+            for (let i = 0; i < hexString.length; i += 2) {
+                bytes.push(parseInt(hexString.substr(i, 2), 16));
+            }
+
+            for (let i = 0; i < bytes.length; i += 16) {
+                const chunk = bytes.slice(i, i + 16);
+                const offset = i.toString(16).padStart(8, '0');
+
+                // Format hex bytes column
+                const hexBytes = chunk
+                    .map(b => (isNaN(b) ? '00' : b.toString(16).padStart(2, '0')))
+                    .join(' ')
+                    .padEnd(47, ' ');
+
+                // Format ASCII column (replace non-printable chars with '.')
+                const ascii = chunk
+                    .map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.'))
+                    .join('');
+
+                output += `${offset}  ${hexBytes}  |${ascii}|\n`;
+            }
+            return output;
+        }
+
+        // Populate and display the inspection modal
+        function inspectPacket(packetData) {
+            document.getElementById('modal-title').innerText = packetData.summary || 'Packet Summary';
+            document.getElementById('modal-protocol-badge').innerText = packetData.type || 'RAW';
+            document.getElementById('modal-src-ip').innerText = packetData.srcIP || 'N/A';
+            document.getElementById('modal-dest-ip').innerText = packetData.destIP || 'N/A';
+
+            const srcPort = packetData.srcPort !== null && packetData.srcPort !== undefined ? packetData.srcPort : '*';
+            const dstPort = packetData.dstPort !== null && packetData.dstPort !== undefined ? packetData.dstPort : '*';
+            document.getElementById('modal-ports').innerText = `${srcPort} → ${dstPort}`;
+            document.getElementById('modal-length').innerText = `${packetData.length} bytes`;
+
+            // Render payload hex dump
+            document.getElementById('modal-hex-view').innerText = formatHexDump(packetData.payload);
+
+            // Unhide modal
+            document.getElementById('packet-modal').classList.remove('hidden');
+        }
+
+        function closePacketModal() {
+            document.getElementById('packet-modal').classList.add('hidden');
+        }
+
+        // Close modal when pressing ESC key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closePacketModal();
         });
     </script>
 </body>

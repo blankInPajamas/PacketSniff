@@ -11,46 +11,57 @@ django.setup()
 channel_layer = get_channel_layer()
 
 def packet_parsing(packet):
-    if IP not in packet:
-        return
+    # 1. Parse IP Layer using string names to avoid import conflicts
+    if packet.haslayer('IP'):
+        network_layer = packet.getlayer('IP')
+    elif packet.haslayer('IPv6'):
+        network_layer = packet.getlayer('IPv6')
+    else:
+        # Ignore non-IP frames (ARP, L2 noise) completely
+        return None
 
-    srcIP = packet[IP].src
-    destIP = packet[IP].dst
-    length = len(packet)
-    summary = packet.summary()
+    # Explicitly cast to string to prevent JSON serialization drops
+    src_ip = str(network_layer.src)
+    dest_ip = str(network_layer.dst)
 
-    protocol = 'OTHER'
-    srcPort = None
-    dstPort = None
+    # 2. Parse Transport Layer
+    protocol = "OTHER"
+    src_port = None
+    dst_port = None
 
-    if TCP in packet:
+    if packet.haslayer('TCP'):
         protocol = "TCP"
-        srcPort = packet[TCP].sport
-        dstPort = packet[TCP].dport
-    elif UDP in packet:
-        protocol = 'UDP'
-        srcPort = packet[UDP].sport
-        dstPort = packet[UDP].dport
-    elif ICMP in packet:
-        protocol = 'ICMP'
+        transport = packet.getlayer('TCP')
+        src_port = int(transport.sport)
+        dst_port = int(transport.dport)
+    elif packet.haslayer('UDP'):
+        protocol = "UDP"
+        transport = packet.getlayer('UDP')
+        src_port = int(transport.sport)
+        dst_port = int(transport.dport)
+    elif packet.haslayer('ICMP'):
+        protocol = "ICMP"
 
-    payload = ''
+    # 3. Extract Payload
+    payload_hex = ""
     if packet.haslayer('Raw'):
-        payload = packet['Raw'].load.hex()
+        payload_hex = packet.getlayer('Raw').load.hex()
+    elif packet.payload:
+        payload_hex = bytes(packet.payload).hex()
 
-    # Use a raw dict directly (avoiding custom class collision with Scapy.Packet)
+    # 4. Strictly Formatted Dictionary
     packet_data = {
-        "srcIP": srcIP,
-        "destIP": destIP,
-        "srcPort": srcPort,
-        "dstPort": dstPort,
         "type": protocol,
-        "length": length,
-        "summary": summary,
-        "payload": payload
+        "srcIP": src_ip,
+        "destIP": dest_ip,
+        "srcPort": src_port,
+        "dstPort": dst_port,
+        "length": int(len(packet)),
+        "summary": str(packet.summary()),
+        "payload": payload_hex
     }
 
-    # Broadcast directly to Django Channels
+    # 5. Broadcast to Django Channels
     async_to_sync(channel_layer.group_send)(
         "packets",
         {
@@ -59,9 +70,7 @@ def packet_parsing(packet):
         }
     )
 
-    print(f"[{protocol}] {srcIP}:{srcPort} -> {destIP}:{dstPort}")
-    
-    # Return None explicitly so Scapy does not attempt serialization
+    print(f"[{protocol}] {src_ip}:{src_port} -> {dest_ip}:{dst_port}")
     return None
 
 if __name__ == '__main__':
