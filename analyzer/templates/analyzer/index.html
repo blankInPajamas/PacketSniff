@@ -73,6 +73,23 @@
                 <button id="toggleStreamBtn" class="bg-mt-sub hover:bg-[#3c3e41] text-xs px-4 py-1.5 rounded border border-[#444649] mt-accent transition-colors">
                     pause stream
                 </button>
+
+                <!-- BPF Filter Input Bar -->
+                <div class="flex items-center gap-2 bg-mt-sub px-3 py-1.5 rounded border border-[#444649]">
+                    <span class="mt-sub text-xs">BPF:</span>
+                    <input 
+                        type="text" 
+                        id="bpfFilterInput" 
+                        placeholder="e.g. tcp port 80 or ip src 192.168.1.1" 
+                        class="bg-transparent text-xs mt-accent focus:outline-none placeholder-gray-600 w-64 font-mono"
+                    />
+                    <button 
+                        id="applyBpfBtn" 
+                        class="text-xs px-2 py-0.5 bg-[#3a3c3f] hover:bg-mt-accent hover:text-[#323437] transition rounded text-mt-text font-bold"
+                    >
+                        Apply
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -186,6 +203,15 @@
         let packetCount = 0;
         const counts = { TCP: 0, UDP: 0, ICMP: 0, OTHER: 0 };
 
+        // Keep received packets so the protocol filter can immediately
+        // re-render the current table instead of affecting only new packets.
+        const packetHistory = [];
+        const MAX_PACKETS = 50;
+
+        // BPF is a backend capture filter; keep it separate from the
+        // client-side protocol display filter.
+        let activeBpfFilter = '';
+
         // DOM References
         const statusEl = document.getElementById('connectionStatus');
         const tableEl = document.getElementById('packetTable');
@@ -235,75 +261,106 @@
         socket.onmessage = (e) => {
             if (isPaused) return;
 
-            const raw = JSON.parse(e.data);
+            let raw;
+            try {
+                raw = JSON.parse(e.data);
+            } catch (error) {
+                console.error('[WebSocket] Invalid JSON:', error);
+                return;
+            }
+
             const packet = raw.data ? raw.data : raw;
+            if (!packet || typeof packet !== 'object') return;
 
-            // Support both snake_case and camelCase keys dynamically
-            const proto = packet.type || packet.protocol || 'OTHER';
-            const src = packet.srcIP || packet.src_ip || packet.src || 'N/A';
-            const dest = packet.destIP || packet.dstIP || packet.dst_ip || packet.dst || 'N/A';
-            const len = packet.length !== undefined ? packet.length : (packet.len || 0);
-            const summary = packet.summary || 'No Summary';
+            // Normalize backend packet keys once.
+            const rawProto = String(packet.type || packet.protocol || 'OTHER').toUpperCase();
+            const proto = ['TCP', 'UDP', 'ICMP', 'OTHER'].includes(rawProto)
+                ? rawProto
+                : 'OTHER';
 
-            const srcPort = packet.srcPort ?? packet.src_port ?? null;
-            const dstPort = packet.dstPort ?? packet.dst_port ?? null;
-
-            // Statistics update
-            packetCount++;
-            if (counts[proto] !== undefined) {
-                counts[proto]++;
-            } else {
-                counts.OTHER++;
-            }
-
-            statTotal.textContent = packetCount;
-            statTcp.textContent = counts.TCP || 0;
-            statUdp.textContent = counts.UDP || 0;
-            statIcmp.textContent = counts.ICMP || 0;
-            statOther.textContent = counts.OTHER || 0;
-
-            // Update Chart
-            if (chart && chart.data && chart.data.datasets[0]) {
-                chart.data.datasets[0].data = [counts.TCP, counts.UDP, counts.ICMP, counts.OTHER];
-                chart.update('none');
-            }
-
-            // Apply active protocol filter
-            if (selectedFilter !== 'ALL' && proto !== selectedFilter) return;
-
-            // Construct Row
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-[#37393c] transition-colors cursor-pointer';
-
-            // Store mapped object for inspection modal
             const normalizedPacket = {
                 type: proto,
-                srcIP: src,
-                destIP: dest,
-                srcPort: srcPort,
-                dstPort: dstPort,
-                length: len,
-                summary: summary,
+                srcIP: String(packet.srcIP ?? packet.src_ip ?? packet.src ?? 'N/A'),
+                destIP: String(packet.destIP ?? packet.dstIP ?? packet.dst_ip ?? packet.dst ?? 'N/A'),
+                srcPort: packet.srcPort ?? packet.src_port ?? null,
+                dstPort: packet.dstPort ?? packet.dst_port ?? null,
+                length: Number(packet.length !== undefined ? packet.length : (packet.len || 0)) || 0,
+                summary: String(packet.summary || 'No Summary'),
                 payload: packet.payload || ''
             };
 
-            row.onclick = () => inspectPacket(normalizedPacket);
+            packetHistory.unshift(normalizedPacket);
+            if (packetHistory.length > MAX_PACKETS) packetHistory.pop();
 
-            const protoColor = proto === 'TCP' ? 'mt-accent font-bold' : 'mt-text';
-            const srcPortStr = srcPort !== null ? `:${srcPort}` : '';
-            const dstPortStr = dstPort !== null ? `:${dstPort}` : '';
+            // These counters describe packets that actually passed the BPF
+            // capture filter, regardless of the client-side protocol filter.
+            packetCount++;
+            counts[proto]++;
 
-            row.innerHTML = `
-                <td class="py-2.5 px-4 ${protoColor}">${proto}</td>
-                <td class="py-2.5 px-4 text-mt-text">${src}<span class="mt-sub">${srcPortStr}</span></td>
-                <td class="py-2.5 px-4 text-mt-text">${dest}<span class="mt-sub">${dstPortStr}</span></td>
-                <td class="py-2.5 px-4 mt-sub">${len} B</td>
-                <td class="py-2.5 px-4 mt-sub truncate max-w-xs">${summary}</td>
-            `;
-
-            tableEl.prepend(row);
-            if (tableEl.children.length > 50) tableEl.lastChild.remove();
+            updateStats();
+            renderPacketTable();
         };
+
+        function updateStats() {
+            statTotal.textContent = packetCount;
+            statTcp.textContent = counts.TCP;
+            statUdp.textContent = counts.UDP;
+            statIcmp.textContent = counts.ICMP;
+            statOther.textContent = counts.OTHER;
+
+            if (chart && chart.data && chart.data.datasets[0]) {
+                chart.data.datasets[0].data = [
+                    counts.TCP,
+                    counts.UDP,
+                    counts.ICMP,
+                    counts.OTHER
+                ];
+                chart.update('none');
+            }
+        }
+
+        function resetPacketView() {
+            packetHistory.length = 0;
+            packetCount = 0;
+            counts.TCP = 0;
+            counts.UDP = 0;
+            counts.ICMP = 0;
+            counts.OTHER = 0;
+
+            updateStats();
+            tableEl.replaceChildren();
+        }
+
+        function renderPacketTable() {
+            tableEl.replaceChildren();
+
+            const visiblePackets = selectedFilter === 'ALL'
+                ? packetHistory
+                : packetHistory.filter(packet => packet.type === selectedFilter);
+
+            visiblePackets.forEach(packet => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-[#37393c] transition-colors cursor-pointer';
+                row.onclick = () => inspectPacket(packet);
+
+                const protoColor = packet.type === 'TCP'
+                    ? 'mt-accent font-bold'
+                    : 'mt-text';
+
+                const srcPortStr = packet.srcPort !== null ? `:${packet.srcPort}` : '';
+                const dstPortStr = packet.dstPort !== null ? `:${packet.dstPort}` : '';
+
+                row.innerHTML = `
+                    <td class="py-2.5 px-4 ${protoColor}">${packet.type}</td>
+                    <td class="py-2.5 px-4 text-mt-text">${packet.srcIP}<span class="mt-sub">${srcPortStr}</span></td>
+                    <td class="py-2.5 px-4 text-mt-text">${packet.destIP}<span class="mt-sub">${dstPortStr}</span></td>
+                    <td class="py-2.5 px-4 mt-sub">${packet.length} B</td>
+                    <td class="py-2.5 px-4 mt-sub truncate max-w-xs">${packet.summary}</td>
+                `;
+
+                tableEl.appendChild(row);
+            });
+        }
 
         socket.onclose = () => {
             statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span> disconnected`;
@@ -321,6 +378,8 @@
 
         filterSelect.addEventListener('change', (e) => {
             selectedFilter = e.target.value;
+            // Apply the UI filter to packets already visible as well.
+            renderPacketTable();
         });
 
         // Converts raw hex string into standard hex dump format (Offset | 16 Hex Bytes | ASCII)
@@ -381,6 +440,42 @@
         // Close modal when pressing ESC key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') closePacketModal();
+        });
+
+        // Send BPF Filter update to Django Consumer over WebSocket
+        const bpfInput = document.getElementById('bpfFilterInput');
+        const applyBpfBtn = document.getElementById('applyBpfBtn');
+
+        function applyBpfFilter() {
+            const filterText = bpfInput.value.trim();
+
+            if (socket.readyState !== WebSocket.OPEN) {
+                alert("WebSocket is not connected.");
+                return;
+            }
+
+            activeBpfFilter = filterText;
+
+            // Remove packets captured with the previous BPF so the table and
+            // counters cannot be mistaken for results from the new filter.
+            resetPacketView();
+
+            socket.send(JSON.stringify({
+                action: 'set_bpf',
+                filter: filterText
+            }));
+
+            console.log(`[BPF UPDATE SENT]: ${filterText || '<empty / all packets>'}`);
+        }
+
+        applyBpfBtn.addEventListener('click', applyBpfFilter);
+
+        // Enter is equivalent to clicking Apply.
+        bpfInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                applyBpfFilter();
+            }
         });
     </script>
 </body>

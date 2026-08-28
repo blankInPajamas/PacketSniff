@@ -51,3 +51,20 @@ class PacketConsumer(AsyncWebsocketConsumer):
             print(f"[SUCCESS] Saved packet to DB with ID: {obj.id}")
         except Exception as e:
             print(f'DB error: Failed to persist packet {e}')
+
+
+    async def receive(self, text_data=None, bytes_data=None):
+        if text_data is None:
+            return
+        data = json.loads(text_data)
+
+        if data.get("action") == "set_bpf":
+            bpf_filter = data.get("filter","")
+
+            await self.channel_layer.group_send(
+                "sniffer_control",
+                {
+                    "type": "update_bpf",
+                    "filter": bpf_filter
+                }
+            )
